@@ -42,6 +42,17 @@ jobs:
       - name: Install JS dependencies
         run: npm ci
 
+      - name: Patch ExpoModulesJSI for Xcode 26 Swift
+        run: |
+          set -euo pipefail
+          FILE="node_modules/expo-modules-jsi/apple/Sources/ExpoModulesJSI/Coding/JavaScriptCodable+Date.swift"
+          if [ -f "$FILE" ]; then
+            sed -i.bak 's/abs(milliseconds) <= maxJavaScriptDateMilliseconds/Swift.abs(milliseconds) <= maxJavaScriptDateMilliseconds/' "$FILE"
+            rg -n "Swift\.abs\(milliseconds\)|abs\(milliseconds\)" "$FILE" || true
+          else
+            echo "No Date.swift to patch (ok)"
+          fi
+
       - name: Generate native iOS project
         run: npx expo prebuild --platform ios --non-interactive
 
