@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
+  InputAccessoryView,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
@@ -22,11 +23,15 @@ type Props = {
   onSave: (title: string, notes: string, deadline: Date | null) => void;
 };
 
+const KEYBOARD_ACCESSORY_ID = 'pulsetodo-add-todo-accessory';
+
 export function AddTodoModal({ visible, onClose, onSave }: Props) {
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
   const [deadline, setDeadline] = useState<Date | null>(null);
   const [showPicker, setShowPicker] = useState(false);
+  const titleRef = useRef<TextInput>(null);
+  const notesRef = useRef<TextInput>(null);
 
   const canSave = useMemo(() => title.trim().length > 0, [title]);
 
@@ -37,7 +42,11 @@ export function AddTodoModal({ visible, onClose, onSave }: Props) {
     setShowPicker(false);
   };
 
-  const dismissKeyboard = () => Keyboard.dismiss();
+  const dismissKeyboard = () => {
+    titleRef.current?.blur();
+    notesRef.current?.blur();
+    Keyboard.dismiss();
+  };
 
   const handleClose = () => {
     dismissKeyboard();
@@ -66,41 +75,49 @@ export function AddTodoModal({ visible, onClose, onSave }: Props) {
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 0}
       >
         <Pressable style={styles.backdrop} onPress={dismissKeyboard}>
           <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
             <ScrollView
-              keyboardShouldPersistTaps="handled"
+              keyboardShouldPersistTaps="always"
+              keyboardDismissMode="on-drag"
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.scrollContent}
             >
               <Text style={styles.heading}>New todo</Text>
+
               <Text style={styles.label}>Title</Text>
               <TextInput
+                ref={titleRef}
                 value={title}
                 onChangeText={setTitle}
                 placeholder="What needs doing?"
                 placeholderTextColor={colors.inkMuted}
                 style={styles.input}
                 autoFocus
-                returnKeyType="next"
-                blurOnSubmit={false}
-              />
-              <Text style={styles.label}>Notes (optional)</Text>
-              <TextInput
-                value={notes}
-                onChangeText={setNotes}
-                placeholder="Optional details"
-                placeholderTextColor={colors.inkMuted}
-                style={[styles.input, styles.notes]}
-                multiline
                 returnKeyType="done"
                 blurOnSubmit
                 onSubmitEditing={dismissKeyboard}
+                inputAccessoryViewID={
+                  Platform.OS === 'ios' ? KEYBOARD_ACCESSORY_ID : undefined
+                }
               />
-              <Pressable style={styles.doneKeyboard} onPress={dismissKeyboard}>
-                <Text style={styles.doneKeyboardText}>Done typing</Text>
-              </Pressable>
+
+              <Text style={styles.label}>Notes (optional)</Text>
+              <TextInput
+                ref={notesRef}
+                value={notes}
+                onChangeText={setNotes}
+                placeholder="Optional details — tap Done on the keyboard bar"
+                placeholderTextColor={colors.inkMuted}
+                style={[styles.input, styles.notes]}
+                multiline
+                textAlignVertical="top"
+                inputAccessoryViewID={
+                  Platform.OS === 'ios' ? KEYBOARD_ACCESSORY_ID : undefined
+                }
+              />
 
               <Text style={styles.label}>Deadline (optional)</Text>
               <Text style={styles.help}>
@@ -127,7 +144,13 @@ export function AddTodoModal({ visible, onClose, onSave }: Props) {
                   </Text>
                 </Pressable>
                 {deadline ? (
-                  <Pressable style={styles.chipGhost} onPress={() => setDeadline(null)}>
+                  <Pressable
+                    style={styles.chipGhost}
+                    onPress={() => {
+                      dismissKeyboard();
+                      setDeadline(null);
+                    }}
+                  >
                     <Text style={styles.chipGhostText}>Clear</Text>
                   </Pressable>
                 ) : null}
@@ -171,6 +194,22 @@ export function AddTodoModal({ visible, onClose, onSave }: Props) {
           </Pressable>
         </Pressable>
       </KeyboardAvoidingView>
+
+      {Platform.OS === 'ios' ? (
+        <InputAccessoryView nativeID={KEYBOARD_ACCESSORY_ID}>
+          <View style={styles.accessory}>
+            <Pressable
+              onPress={dismissKeyboard}
+              hitSlop={12}
+              style={styles.accessoryBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss keyboard"
+            >
+              <Text style={styles.accessoryBtnText}>Done</Text>
+            </Pressable>
+          </View>
+        </InputAccessoryView>
+      ) : null}
     </Modal>
   );
 }
@@ -226,18 +265,7 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
   },
   notes: {
-    minHeight: 72,
-    textAlignVertical: 'top',
-  },
-  doneKeyboard: {
-    alignSelf: 'flex-end',
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-  },
-  doneKeyboardText: {
-    color: colors.accentSoft,
-    fontWeight: '700',
-    fontSize: 14,
+    minHeight: 88,
   },
   row: {
     flexDirection: 'row',
@@ -292,5 +320,22 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontWeight: '700',
     fontSize: 16,
+  },
+  accessory: {
+    backgroundColor: colors.bgSoft,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.line,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    alignItems: 'flex-end',
+  },
+  accessoryBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  accessoryBtnText: {
+    color: colors.accentSoft,
+    fontSize: 17,
+    fontWeight: '700',
   },
 });
