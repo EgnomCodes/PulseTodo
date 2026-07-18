@@ -1,8 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import {
+  Keyboard,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -34,13 +37,17 @@ export function AddTodoModal({ visible, onClose, onSave }: Props) {
     setShowPicker(false);
   };
 
+  const dismissKeyboard = () => Keyboard.dismiss();
+
   const handleClose = () => {
+    dismissKeyboard();
     reset();
     onClose();
   };
 
   const handleSave = () => {
     if (!canSave) return;
+    dismissKeyboard();
     onSave(title, notes, deadline);
     reset();
     onClose();
@@ -56,86 +63,122 @@ export function AddTodoModal({ visible, onClose, onSave }: Props) {
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>
-      <View style={styles.backdrop}>
-        <View style={styles.sheet}>
-          <Text style={styles.heading}>New todo</Text>
-          <Text style={styles.label}>Title</Text>
-          <TextInput
-            value={title}
-            onChangeText={setTitle}
-            placeholder="What needs doing?"
-            placeholderTextColor={colors.inkMuted}
-            style={styles.input}
-            autoFocus
-          />
-          <Text style={styles.label}>Notes</Text>
-          <TextInput
-            value={notes}
-            onChangeText={setNotes}
-            placeholder="Optional details"
-            placeholderTextColor={colors.inkMuted}
-            style={[styles.input, styles.notes]}
-            multiline
-          />
-          <Text style={styles.label}>Deadline</Text>
-          <View style={styles.row}>
-            <Pressable
-              style={styles.chip}
-              onPress={() => setShowPicker(true)}
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <Pressable style={styles.backdrop} onPress={dismissKeyboard}>
+          <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.scrollContent}
             >
-              <Text style={styles.chipText}>
-                {deadline
-                  ? deadline.toLocaleString(undefined, {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: 'numeric',
-                      minute: '2-digit',
-                    })
-                  : 'Set deadline'}
-              </Text>
-            </Pressable>
-            {deadline ? (
-              <Pressable style={styles.chipGhost} onPress={() => setDeadline(null)}>
-                <Text style={styles.chipGhostText}>Clear</Text>
+              <Text style={styles.heading}>New todo</Text>
+              <Text style={styles.label}>Title</Text>
+              <TextInput
+                value={title}
+                onChangeText={setTitle}
+                placeholder="What needs doing?"
+                placeholderTextColor={colors.inkMuted}
+                style={styles.input}
+                autoFocus
+                returnKeyType="next"
+                blurOnSubmit={false}
+              />
+              <Text style={styles.label}>Notes (optional)</Text>
+              <TextInput
+                value={notes}
+                onChangeText={setNotes}
+                placeholder="Optional details"
+                placeholderTextColor={colors.inkMuted}
+                style={[styles.input, styles.notes]}
+                multiline
+                returnKeyType="done"
+                blurOnSubmit
+                onSubmitEditing={dismissKeyboard}
+              />
+              <Pressable style={styles.doneKeyboard} onPress={dismissKeyboard}>
+                <Text style={styles.doneKeyboardText}>Done typing</Text>
               </Pressable>
-            ) : null}
-          </View>
 
-          {showPicker ? (
-            <DateTimePicker
-              value={deadline ?? new Date(Date.now() + 60 * 60 * 1000)}
-              mode="datetime"
-              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-              onChange={onChangeDate}
-              themeVariant="dark"
-            />
-          ) : null}
+              <Text style={styles.label}>Deadline (optional)</Text>
+              <Text style={styles.help}>
+                When this task is due. Overdue items show in red and are called out in pulse
+                reminders.
+              </Text>
+              <View style={styles.row}>
+                <Pressable
+                  style={styles.chip}
+                  onPress={() => {
+                    dismissKeyboard();
+                    setShowPicker(true);
+                  }}
+                >
+                  <Text style={styles.chipText}>
+                    {deadline
+                      ? deadline.toLocaleString(undefined, {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: 'numeric',
+                          minute: '2-digit',
+                        })
+                      : 'Set deadline'}
+                  </Text>
+                </Pressable>
+                {deadline ? (
+                  <Pressable style={styles.chipGhost} onPress={() => setDeadline(null)}>
+                    <Text style={styles.chipGhostText}>Clear</Text>
+                  </Pressable>
+                ) : null}
+              </View>
 
-          {Platform.OS === 'ios' && showPicker ? (
-            <Pressable style={styles.chipGhost} onPress={() => setShowPicker(false)}>
-              <Text style={styles.chipGhostText}>Done choosing date</Text>
-            </Pressable>
-          ) : null}
+              {showPicker ? (
+                <DateTimePicker
+                  value={deadline ?? new Date(Date.now() + 60 * 60 * 1000)}
+                  mode="datetime"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={onChangeDate}
+                  themeVariant="dark"
+                />
+              ) : null}
 
-          <View style={styles.actions}>
-            <Pressable style={styles.btnGhost} onPress={handleClose}>
-              <Text style={styles.btnGhostText}>Cancel</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.btnPrimary, !canSave && styles.btnDisabled]}
-              onPress={handleSave}
-              disabled={!canSave}
-            >
-              <Text style={styles.btnPrimaryText}>Add</Text>
-            </Pressable>
-          </View>
-        </View>
-      </View>
+              {Platform.OS === 'ios' && showPicker ? (
+                <Pressable
+                  style={styles.chipGhost}
+                  onPress={() => {
+                    dismissKeyboard();
+                    setShowPicker(false);
+                  }}
+                >
+                  <Text style={styles.chipGhostText}>Done choosing date</Text>
+                </Pressable>
+              ) : null}
+
+              <View style={styles.actions}>
+                <Pressable style={styles.btnGhost} onPress={handleClose}>
+                  <Text style={styles.btnGhostText}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.btnPrimary, !canSave && styles.btnDisabled]}
+                  onPress={handleSave}
+                  disabled={!canSave}
+                >
+                  <Text style={styles.btnPrimaryText}>Add</Text>
+                </Pressable>
+              </View>
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.55)',
@@ -149,6 +192,10 @@ const styles = StyleSheet.create({
     paddingBottom: 34,
     borderTopWidth: 1,
     borderColor: colors.line,
+    maxHeight: '92%',
+  },
+  scrollContent: {
+    paddingBottom: 8,
   },
   heading: {
     color: colors.ink,
@@ -161,6 +208,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginBottom: 6,
     marginTop: 8,
+  },
+  help: {
+    color: colors.inkMuted,
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 8,
   },
   input: {
     backgroundColor: colors.bgSoft,
@@ -175,6 +228,16 @@ const styles = StyleSheet.create({
   notes: {
     minHeight: 72,
     textAlignVertical: 'top',
+  },
+  doneKeyboard: {
+    alignSelf: 'flex-end',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  doneKeyboardText: {
+    color: colors.accentSoft,
+    fontWeight: '700',
+    fontSize: 14,
   },
   row: {
     flexDirection: 'row',
