@@ -72,12 +72,10 @@ export default function App() {
 
   useEffect(() => {
     if (!ready) return;
+    // Only when pulse settings change — not on every todo edit (that reset the countdown).
     schedulePulseReminders(settings, todos).catch(() => undefined);
-  }, [ready, settings, todos]);
-
-  // Do NOT reschedule on every app open — that resets the X-minute countdown.
-  // Only refresh the scheduled body when returning if reminders are on and we
-  // have a reason (handled by the settings/todos effect above).
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- todos omitted on purpose
+  }, [ready, settings]);
 
   const onAdd = async (title: string, notes: string, deadline: Date | null) => {
     const next = [createTodo(title, notes, deadline), ...todos];
