@@ -17,8 +17,7 @@
       "bundleIdentifier": "com.pulsetodo.app",
       "buildNumber": "1",
       "infoPlist": {
-        "UIBackgroundModes": ["remote-notification"],
-        "NSUserNotificationsUsageDescription": "PulseTodo needs notifications to show your periodic todo pulse overlay reminder."
+        "NSUserNotificationsUsageDescription": "PulseTodo sends periodic reminders so you can check your todo list for anything urgent."
       }
     },
     "android": {

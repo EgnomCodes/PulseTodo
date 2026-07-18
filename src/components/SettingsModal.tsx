@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+  Alert,
   Modal,
   Pressable,
   StyleSheet,
@@ -10,6 +11,12 @@ import {
 } from 'react-native';
 import { AppSettings } from '../types';
 import { colors } from '../theme';
+import {
+  getPermissionSnapshot,
+  openSystemNotificationSettings,
+  sendTestNotification,
+  type PermissionSnapshot,
+} from '../notifications';
 
 type Props = {
   visible: boolean;
@@ -21,10 +28,29 @@ type Props = {
 export function SettingsModal({ visible, settings, onClose, onSave }: Props) {
   const [intervalMinutes, setIntervalMinutes] = useState(String(settings.intervalMinutes));
   const [remindersEnabled, setRemindersEnabled] = useState(settings.remindersEnabled);
+  const [snap, setSnap] = useState<PermissionSnapshot | null>(null);
+  const [testBusy, setTestBusy] = useState(false);
 
   const syncFromProps = () => {
     setIntervalMinutes(String(settings.intervalMinutes));
     setRemindersEnabled(settings.remindersEnabled);
+    getPermissionSnapshot()
+      .then(setSnap)
+      .catch(() => setSnap(null));
+  };
+
+  const onTest = async () => {
+    setTestBusy(true);
+    try {
+      const msg = await sendTestNotification();
+      const next = await getPermissionSnapshot();
+      setSnap(next);
+      Alert.alert('Test notification', msg);
+    } catch (e) {
+      Alert.alert('Test failed', e instanceof Error ? e.message : String(e));
+    } finally {
+      setTestBusy(false);
+    }
   };
 
   return (
@@ -39,9 +65,31 @@ export function SettingsModal({ visible, settings, onClose, onSave }: Props) {
         <View style={styles.sheet}>
           <Text style={styles.heading}>Pulse settings</Text>
           <Text style={styles.help}>
-            Every X minutes you get a banner reminder while using other apps. Tap it to
-            open this list. Nothing interrupts you while PulseTodo is already open.
+            Every X minutes you get a banner while using other apps. Tap it to open this
+            list. Use Test first to confirm iOS allows notifications.
           </Text>
+
+          <Text style={styles.status}>
+            Permission: {snap?.status ?? '…'}
+            {'\n'}
+            Queued pulses: {snap?.scheduledCount ?? '…'}
+          </Text>
+
+          {!snap?.granted ? (
+            <Pressable style={styles.linkBtn} onPress={() => openSystemNotificationSettings()}>
+              <Text style={styles.linkBtnText}>Open iOS notification settings</Text>
+            </Pressable>
+          ) : null}
+
+          <Pressable
+            style={[styles.testBtn, testBusy && styles.btnDisabled]}
+            onPress={onTest}
+            disabled={testBusy}
+          >
+            <Text style={styles.testBtnText}>
+              {testBusy ? 'Scheduling…' : 'Send test notification (5s)'}
+            </Text>
+          </Pressable>
 
           <View style={styles.rowBetween}>
             <Text style={styles.label}>Reminders on</Text>
@@ -63,7 +111,7 @@ export function SettingsModal({ visible, settings, onClose, onSave }: Props) {
             placeholderTextColor={colors.inkMuted}
           />
           <View style={styles.presets}>
-            {[5, 10, 15, 30, 60].map((m) => (
+            {[1, 5, 10, 15, 30, 60].map((m) => (
               <Pressable
                 key={m}
                 style={[
@@ -133,7 +181,36 @@ const styles = StyleSheet.create({
     color: colors.inkMuted,
     fontSize: 14,
     lineHeight: 20,
-    marginBottom: 18,
+    marginBottom: 12,
+  },
+  status: {
+    color: colors.accentSoft,
+    fontSize: 13,
+    lineHeight: 20,
+    marginBottom: 10,
+    fontWeight: '600',
+  },
+  linkBtn: {
+    marginBottom: 10,
+  },
+  linkBtnText: {
+    color: colors.warn,
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  testBtn: {
+    backgroundColor: colors.bgSoft,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  testBtnText: {
+    color: colors.accentSoft,
+    fontWeight: '700',
+    fontSize: 15,
   },
   rowBetween: {
     flexDirection: 'row',
@@ -204,6 +281,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 22,
     paddingVertical: 12,
+  },
+  btnDisabled: {
+    opacity: 0.5,
   },
   btnPrimaryText: {
     color: colors.white,

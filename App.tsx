@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  AppState,
   FlatList,
   Pressable,
   StyleSheet,
@@ -76,6 +77,16 @@ export default function App() {
     schedulePulseReminders(settings, todos).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- todos omitted on purpose
   }, [ready, settings]);
+
+  // Refill the one-shot queue when returning to the app (keeps pulses going long-term).
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active' && settings.remindersEnabled) {
+        schedulePulseReminders(settings, todos).catch(() => undefined);
+      }
+    });
+    return () => sub.remove();
+  }, [settings, todos]);
 
   const onAdd = async (title: string, notes: string, deadline: Date | null) => {
     const next = [createTodo(title, notes, deadline), ...todos];

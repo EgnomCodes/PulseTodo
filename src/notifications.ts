@@ -1,31 +1,59 @@
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
-import { AppState, Platform } from 'react-native';
+import { Linking, Platform } from 'react-native';
 import { AppSettings, Todo } from './types';
 
-const PULSE_NOTIFICATION_ID = 'pulsetodo-repeating-pulse';
+const PULSE_ID_PREFIX = 'pulsetodo-pulse-';
+/** How many upcoming one-shot pulses to keep queued (iOS caps ~64 total). */
+const PULSE_QUEUE_SIZE = 40;
 
-// Only surface pulses when the user is outside the app.
-// If PulseTodo is already open, the list is right there — no banner/overlay.
+// Always allow presentation. Suppressing based on AppState was unreliable on iOS
+// and made it look like notifications were "broken" during testing.
 Notifications.setNotificationHandler({
-  handleNotification: async () => {
-    const inApp = AppState.currentState === 'active';
-    return {
-      shouldShowBanner: !inApp,
-      shouldShowList: !inApp,
-      shouldPlaySound: !inApp,
-      shouldSetBadge: true,
-    };
-  },
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
 });
 
+export type PermissionSnapshot = {
+  granted: boolean;
+  status: string;
+  scheduledCount: number;
+};
+
+export async function getPermissionSnapshot(): Promise<PermissionSnapshot> {
+  const current = await Notifications.getPermissionsAsync();
+  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+  const ours = scheduled.filter((n) => n.identifier.startsWith(PULSE_ID_PREFIX));
+  const status =
+    current.granted
+      ? 'granted'
+      : current.ios?.status === Notifications.IosAuthorizationStatus.DENIED
+        ? 'denied'
+        : current.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL
+          ? 'provisional'
+          : 'undetermined';
+
+  return {
+    granted:
+      current.granted ||
+      current.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL,
+    status,
+    scheduledCount: ours.length,
+  };
+}
+
 export async function ensureNotificationPermissions(): Promise<boolean> {
-  if (!Device.isDevice && Platform.OS === 'ios') {
-    // Simulator can still schedule local notifications on newer iOS/Xcode.
-  }
+  void Device.isDevice; // keep import used; simulators can still schedule locals
 
   const current = await Notifications.getPermissionsAsync();
-  if (current.granted || current.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL) {
+  if (
+    current.granted ||
+    current.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL
+  ) {
     return true;
   }
 
@@ -41,6 +69,14 @@ export async function ensureNotificationPermissions(): Promise<boolean> {
     requested.granted ||
     requested.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL
   );
+}
+
+export async function openSystemNotificationSettings(): Promise<void> {
+  if (Platform.OS === 'ios') {
+    await Linking.openURL('app-settings:');
+  } else {
+    await Linking.openSettings();
+  }
 }
 
 function urgentSummary(todos: Todo[]): string {
@@ -64,46 +100,80 @@ function urgentSummary(todos: Todo[]): string {
   return `${open.length} open · ${open[0].title}`;
 }
 
+async function cancelOurPulses(): Promise<void> {
+  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+  await Promise.all(
+    scheduled
+      .filter((n) => n.identifier.startsWith(PULSE_ID_PREFIX))
+      .map((n) => Notifications.cancelScheduledNotificationAsync(n.identifier))
+  );
+}
+
 /**
- * iOS cannot draw a true system overlay above other apps without jailbreak.
- * Closest supported behavior: repeating local notification every X minutes.
- * Tap opens PulseTodo to the permanent list. No UI when the app is already open.
- *
- * Caveats (Apple limits, not avoidable without a server):
- * - Notification text is fixed until the app opens and reschedules.
- * - iOS may delay banners under Focus / Scheduled Summary.
- * - timeSensitive may behave like a normal alert without Apple entitlement.
+ * Queue many one-shot notifications instead of a single repeating trigger.
+ * Repeating TIME_INTERVAL has been flaky for some sideloaded iOS builds;
+ * an explicit queue is more reliable and still auto-continues until emptied.
  */
 export async function schedulePulseReminders(
   settings: AppSettings,
   todos: Todo[]
-): Promise<void> {
-  // Cancel only our pulse — avoid wiping unrelated schedules if any are added later.
-  await Notifications.cancelScheduledNotificationAsync(PULSE_NOTIFICATION_ID).catch(() => undefined);
+): Promise<PermissionSnapshot> {
+  await cancelOurPulses();
 
   if (!settings.remindersEnabled) {
-    return;
+    return getPermissionSnapshot();
   }
 
   const ok = await ensureNotificationPermissions();
-  if (!ok) return;
+  if (!ok) {
+    return getPermissionSnapshot();
+  }
 
-  // iOS repeating interval minimum is 60s.
   const minutes = Math.max(1, Math.min(1440, Math.round(settings.intervalMinutes)));
-  const seconds = minutes * 60;
+  const intervalSeconds = minutes * 60;
+  const body = urgentSummary(todos);
+
+  for (let i = 1; i <= PULSE_QUEUE_SIZE; i++) {
+    await Notifications.scheduleNotificationAsync({
+      identifier: `${PULSE_ID_PREFIX}${i}`,
+      content: {
+        title: 'PulseTodo',
+        body,
+        sound: true,
+        data: { openTodos: true, source: 'pulse' },
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: intervalSeconds * i,
+        repeats: false,
+      },
+    });
+  }
+
+  return getPermissionSnapshot();
+}
+
+/** Fires once in ~5s so you can verify permission + delivery without waiting for the interval. */
+export async function sendTestNotification(): Promise<string> {
+  const ok = await ensureNotificationPermissions();
+  if (!ok) {
+    return 'Permission denied. Enable Notifications for PulseTodo in iOS Settings, then try again.';
+  }
 
   await Notifications.scheduleNotificationAsync({
-    identifier: PULSE_NOTIFICATION_ID,
+    identifier: `${PULSE_ID_PREFIX}test`,
     content: {
-      title: 'PulseTodo',
-      body: urgentSummary(todos),
+      title: 'PulseTodo test',
+      body: 'Notifications work. Leave the app for regular pulses.',
       sound: true,
-      data: { openTodos: true, source: 'pulse' },
+      data: { openTodos: true, source: 'test' },
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-      seconds,
-      repeats: true,
+      seconds: 5,
+      repeats: false,
     },
   });
+
+  return 'Test scheduled. Switch apps or lock the phone — banner in ~5 seconds.';
 }
