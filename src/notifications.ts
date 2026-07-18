@@ -68,19 +68,27 @@ function urgentSummary(todos: Todo[]): string {
  * iOS cannot draw a true system overlay above other apps without jailbreak.
  * Closest supported behavior: repeating local notification every X minutes.
  * Tap opens PulseTodo to the permanent list. No UI when the app is already open.
+ *
+ * Caveats (Apple limits, not avoidable without a server):
+ * - Notification text is fixed until the app opens and reschedules.
+ * - iOS may delay banners under Focus / Scheduled Summary.
+ * - timeSensitive may behave like a normal alert without Apple entitlement.
  */
 export async function schedulePulseReminders(
   settings: AppSettings,
   todos: Todo[]
 ): Promise<void> {
+  // Cancel only our pulse — avoid wiping unrelated schedules if any are added later.
   await Notifications.cancelScheduledNotificationAsync(PULSE_NOTIFICATION_ID).catch(() => undefined);
-  await Notifications.cancelAllScheduledNotificationsAsync();
 
-  if (!settings.remindersEnabled) return;
+  if (!settings.remindersEnabled) {
+    return;
+  }
 
   const ok = await ensureNotificationPermissions();
   if (!ok) return;
 
+  // iOS repeating interval minimum is 60s.
   const minutes = Math.max(1, Math.min(1440, Math.round(settings.intervalMinutes)));
   const seconds = minutes * 60;
 
@@ -91,11 +99,6 @@ export async function schedulePulseReminders(
       body: urgentSummary(todos),
       sound: true,
       data: { openTodos: true, source: 'pulse' },
-      ...(Platform.OS === 'ios'
-        ? {
-            interruptionLevel: 'timeSensitive' as const,
-          }
-        : {}),
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,

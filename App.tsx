@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  AppState,
   FlatList,
   Pressable,
   StyleSheet,
@@ -76,14 +75,9 @@ export default function App() {
     schedulePulseReminders(settings, todos).catch(() => undefined);
   }, [ready, settings, todos]);
 
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') {
-        schedulePulseReminders(settings, todos).catch(() => undefined);
-      }
-    });
-    return () => sub.remove();
-  }, [settings, todos]);
+  // Do NOT reschedule on every app open — that resets the X-minute countdown.
+  // Only refresh the scheduled body when returning if reminders are on and we
+  // have a reason (handled by the settings/todos effect above).
 
   const onAdd = async (title: string, notes: string, deadline: Date | null) => {
     const next = [createTodo(title, notes, deadline), ...todos];
