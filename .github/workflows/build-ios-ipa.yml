@@ -4,10 +4,19 @@ name: Build iOS IPA (unsigned)
 
 on:
   workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - ".github/workflows/build-ios-ipa.yml"
+      - "App.tsx"
+      - "app.json"
+      - "package.json"
+      - "package-lock.json"
+      - "src/**"
 
 jobs:
   build-ipa:
-    runs-on: macos-15
+    runs-on: macos-14
     timeout-minutes: 60
 
     steps:
