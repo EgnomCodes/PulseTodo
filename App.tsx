@@ -14,6 +14,7 @@ import { SettingsModal } from './src/components/SettingsModal';
 import { TodoRow } from './src/components/TodoRow';
 import {
   ensureNotificationPermissions,
+  getPermissionSnapshot,
   schedulePulseReminders,
 } from './src/notifications';
 import {
@@ -78,12 +79,18 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- todos omitted on purpose
   }, [ready, settings]);
 
-  // Refill the one-shot queue when returning to the app (keeps pulses going long-term).
+  // Refill the one-shot queue when returning only if it's running low —
+  // a full reschedule every open would keep pushing the next pulse out.
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active' && settings.remindersEnabled) {
-        schedulePulseReminders(settings, todos).catch(() => undefined);
-      }
+      if (state !== 'active' || !settings.remindersEnabled) return;
+      getPermissionSnapshot()
+        .then((snap) => {
+          if (snap.scheduledCount < 10) {
+            return schedulePulseReminders(settings, todos);
+          }
+        })
+        .catch(() => undefined);
     });
     return () => sub.remove();
   }, [settings, todos]);
