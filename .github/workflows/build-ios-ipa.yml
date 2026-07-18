@@ -1,0 +1,81 @@
+# Free IPA build for SideStore / AltStore (no Mac, no $99 Apple Developer).
+# Uses GitHub's macOS runners. SideStore re-signs with your free Apple ID.
+name: Build iOS IPA (unsigned)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-ipa:
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install JS dependencies
+        run: npm ci
+
+      - name: Generate native iOS project
+        run: npx expo prebuild --platform ios --non-interactive
+
+      - name: Install CocoaPods
+        working-directory: ios
+        run: pod install
+
+      - name: Resolve Xcode scheme
+        id: scheme
+        run: |
+          set -euo pipefail
+          WORKSPACE=$(ls -d ios/*.xcworkspace | head -n1)
+          echo "workspace=$WORKSPACE" >> "$GITHUB_OUTPUT"
+          SCHEME=$(xcodebuild -list -workspace "$WORKSPACE" | awk '/Schemes/{f=1;next} f&&NF{print $1; exit}')
+          echo "scheme=$SCHEME" >> "$GITHUB_OUTPUT"
+          echo "Using workspace=$WORKSPACE scheme=$SCHEME"
+
+      - name: Build Release (unsigned / for re-sign)
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          xcodebuild \
+            -workspace "${{ steps.scheme.outputs.workspace }}" \
+            -scheme "${{ steps.scheme.outputs.scheme }}" \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build/DerivedData \
+            -destination "generic/platform=iOS" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package IPA
+        run: |
+          set -euo pipefail
+          APP=$(find build/DerivedData/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -n1)
+          if [ -z "$APP" ]; then
+            echo "No .app found. Build products:"
+            find build/DerivedData/Build/Products -type d -maxdepth 3 || true
+            exit 1
+          fi
+          echo "Packaging $APP"
+          rm -rf Payload PulseTodo.ipa
+          mkdir Payload
+          cp -R "$APP" Payload/
+          zip -r PulseTodo.ipa Payload
+          ls -lh PulseTodo.ipa
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PulseTodo-ipa
+          path: PulseTodo.ipa
+          if-no-files-found: error
+          retention-days: 14
